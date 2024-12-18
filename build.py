@@ -37,16 +37,10 @@ def main():
         site_packages.append(path)
     os.environ['PYTHONPATH'] = os.pathsep.join(site_packages)
 
-  use_reclient, use_goma = get_gn_config(args)
-  if use_reclient:
-    build_tools = os.path.join(ROOT_DIR, 'vendor/build_tools')
-    credentials_helper = os.path.join(build_tools, 'third_party/reclient/electron-rbe-credential-helper')
-    os.environ['RBE_service'] = 'rbe.notgoma.com:443'
-    os.environ['RBE_experimental_credentials_helper'] = credentials_helper
-    os.environ['RBE_experimental_credentials_helper_args'] = 'print'
-
   autoninja = 'autoninja.bat' if current_os() == 'win' else 'autoninja'
   ninja_args = [ autoninja,  '-C', args.out_dir ]
+
+  use_reclient, use_goma = get_gn_config(args)
   if use_reclient or use_goma:
     ninja_args += [ '-j', '200' ]
 

@@ -30,30 +30,12 @@ def main():
                       help='Pass arguments to GN')
   parser.add_argument('--reclient', action='store_true', default=False,
                       help='Build with reclient')
-  parser.add_argument('--goma', action='store_true', default=False,
-                      help='Build with GOMA')
   parser.add_argument('--config', choices=[ 'Component', 'Release', 'Debug' ],
                       help='Which config to generate')
   parser.add_argument('--custom-config', help='Generate custom config')
   args = parser.parse_args()
 
   add_depot_tools_to_path(args.src_dir)
-
-  # Configure reclient.
-  if args.reclient:
-    reclient_cfgs_dir = os.path.join(args.src_dir, 'buildtools/reclient_cfgs')
-    subprocess.check_call([
-        sys.executable,
-        os.path.join(reclient_cfgs_dir, 'configure_reclient_cfgs.py'),
-        '--rbe_instance', 'projects/rbe-chrome-untrusted/instances/default_instance',
-        '--reproxy_cfg_template', 'reproxy.cfg.template',
-        '--rewrapper_cfg_project', '',
-        '--skip_remoteexec_cfg_fetch' ])
-    subprocess.check_call([
-        sys.executable,
-        os.path.join(ROOT_DIR, 'vendor/engflow_reclient_configs/configure_reclient.py'),
-        '--force',
-        '--src_dir', args.src_dir ])
 
   args.arg += [
       f'target_cpu="{args.target_cpu}"',
@@ -63,11 +45,6 @@ def main():
     args.arg += [ 'enable_nacl=false' ]
   if args.reclient:
     args.arg += [ 'use_remoteexec=true' ]
-  elif args.goma:
-    args.arg += [
-        f'import("{ROOT_DIR}/vendor/build_tools/third_party/goma.gn")',
-        'use_goma_thin_lto=true',
-    ]
 
   generate_all = not args.config and not args.custom_config
 

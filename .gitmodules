@@ -2,7 +2,3 @@
 	path = vendor/depot_tools
 	url = https://chromium.googlesource.com/chromium/tools/depot_tools
 	shallow = true
-[submodule "build_tools"]
-	path = vendor/build_tools
-	url = https://github.com/electron/build-tools
-	shallow = true
