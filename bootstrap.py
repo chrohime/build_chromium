@@ -147,6 +147,11 @@ def main():
   host_os = current_os()
   host_cpu = current_cpu()
 
+  # Bootstrap depot_tools.
+  if host_os == 'win':
+    win_tools = os.path.join(ROOT_DIR, 'vendor/depot_tools/bootstrap/win_tools.bat')
+    subprocess.check_call([ win_tools ])
+
   add_depot_tools_to_path(args.src_dir)
   os.chdir(args.src_dir)
 
