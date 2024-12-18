@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import ast
 import os
 import platform
 import re
@@ -10,7 +11,7 @@ import tarfile
 import urllib.request
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-CHROMIUM_URL = 'https://github.com/photoionization/chromium_source_tarball/releases/download'
+CHROMIUM_URL = 'https://github.com/chrohime/chromium_source_tarball/releases/download'
 
 def add_depot_tools_to_path(src_dir):
   os.environ['DEPOT_TOOLS_UPDATE'] = '0'
@@ -73,7 +74,7 @@ def cipd(root, package, version):
     print(stderr)
     raise ValueError('cipd failed.')
 
-def read_var_from_deps(deps_file, var):
+def read_var_from_deps(var, deps_file='DEPS'):
   result = subprocess.run([ sys.executable,
                             'third_party/depot_tools/gclient.py', 'getdep',
                             '--deps-file', deps_file,
@@ -109,6 +110,37 @@ def download_from_google_storage(
   if output:
     args += [ '-o', output ]
   subprocess.check_call(args)
+
+def download_gcs_dep(name, bucket):
+  objects = ast.literal_eval(read_var_from_deps('src/' + name))
+  output_file = os.path.join(name, objects[0]['output_file'])
+  download_from_google_storage(bucket,
+                               sha1=objects[0]['object_name'],
+                               output=output_file)
+
+def download_nodejs(host_os):
+  if os.path.exists('third_party/node/linux/node-linux-x64.tar.gz.sha1'):
+    # Linux node is always downloaded for remote action.
+    node_version = search_pattern('DEPS', 'chromium-nodejs/([0-9.]*)')
+    download_from_google_storage(
+        f'chromium-nodejs/{node_version}',
+        sha_file='third_party/node/linux/node-linux-x64.tar.gz.sha1')
+    if host_os == 'mac':
+      download_from_google_storage(
+          f'chromium-nodejs/{node_version}',
+          sha_file=f'third_party/node/mac/node-darwin-{host_cpu}.tar.gz.sha1')
+    elif host_os == 'win':
+      download_from_google_storage(
+          f'chromium-nodejs/{node_version}',
+          extract=False,
+          sha_file='third_party/node/win/node.exe.sha1')
+  else:
+    download_gcs_dep('third_party/node/linux', 'chromium-nodejs')
+    if host_os == 'mac':
+      download_gcs_dep('third_party/node/mac', 'chromium-nodejs')
+      download_gcs_dep('third_party/node/mac_arm64', 'chromium-nodejs')
+    elif host_os == 'win':
+      download_gcs_dep('third_party/node/win', 'chromium-nodejs')
 
 def main():
   parser = argparse.ArgumentParser()
@@ -164,25 +196,20 @@ def main():
   subprocess.check_call([ sys.executable, 'tools/clang/scripts/update.py' ])
   subprocess.check_call([ sys.executable, 'tools/rust/update_rust.py' ])
 
-  # Linux node is always downloaded for remote action.
-  node_version = search_pattern('DEPS', 'chromium-nodejs/([0-9.]*)')
-  download_from_google_storage(
-      f'chromium-nodejs/{node_version}',
-      sha_file='third_party/node/linux/node-linux-x64.tar.gz.sha1')
   # Download util binaries.
-  cipd('third_party/devtools-frontend/src/third_party/esbuild',
-       'infra/3pp/tools/esbuild/${platform}',
-       read_var_from_deps('third_party/devtools-frontend/src/DEPS',
-                          'third_party/esbuild:infra/3pp/tools/esbuild/${platform}'))
+  download_nodejs(host_os)
+  if os.path.isdir('third_party/devtools-frontend/src/third_party/esbuild'):
+    cipd('third_party/devtools-frontend/src/third_party/esbuild',
+         'infra/3pp/tools/esbuild/${platform}',
+         read_var_from_deps('third_party/esbuild:infra/3pp/tools/esbuild/${platform}',
+                            'third_party/devtools-frontend/src/DEPS'))
   cipd('third_party/ninja',
        'infra/3pp/tools/ninja/${platform}',
-       read_var_from_deps('DEPS',
-                          'src/third_party/ninja:infra/3pp/tools/ninja/${platform}'))
+       read_var_from_deps('src/third_party/ninja:infra/3pp/tools/ninja/${platform}'))
   cipd('buildtools/reclient',
        'infra/rbe/client/${platform}',
-       read_var_from_deps('DEPS',
-                          'src/buildtools/reclient:infra/rbe/client/${platform}'))
-  gn_version = read_var_from_deps('DEPS', 'src/buildtools/mac:gn/gn/mac-${arch}')
+       read_var_from_deps('src/buildtools/reclient:infra/rbe/client/${platform}'))
+  gn_version = read_var_from_deps('src/buildtools/mac:gn/gn/mac-${arch}')
   if host_os == 'linux':
     cipd('buildtools/linux64', 'gn/gn/linux-${arch}', gn_version)
     if args.target_os == 'win':
@@ -192,9 +219,6 @@ def main():
           sha_file='build/toolchain/win/rc/linux64/rc.sha1')
   elif host_os == 'mac':
     cipd('buildtools/mac', 'gn/gn/mac-${arch}', gn_version)
-    download_from_google_storage(
-        f'chromium-nodejs/{node_version}',
-        sha_file=f'third_party/node/mac/node-darwin-{host_cpu}.tar.gz.sha1')
     download_from_google_storage(
         'chromium-browser-clang',
         sha_file=f'tools/clang/dsymutil/bin/dsymutil.{host_cpu}.sha1',
@@ -207,10 +231,6 @@ def main():
           sha_file='build/toolchain/win/rc/mac/rc.sha1')
   elif host_os == 'win':
     cipd('buildtools/win', 'gn/gn/windows-amd64', gn_version)
-    download_from_google_storage(
-        f'chromium-nodejs/{node_version}',
-        extract=False,
-        sha_file='third_party/node/win/node.exe.sha1')
     download_from_google_storage(
         'chromium-browser-clang/rc',
         extract=False,
