@@ -4,13 +4,14 @@ on: push
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ fromJson('{"linux":"ubuntu-22.04","mac":"macos-13","win":"windows-2022"}')[matrix.targetOs] }}
     continue-on-error: false
 
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-13, windows-2022]
+        targetOs: [linux, mac, win]
+        targetCpu: [x64, arm64]
 
     steps:
       - name: Mount workspace to /mnt
@@ -40,9 +41,9 @@ jobs:
         run: python3 -m pip install httplib2
 
       - name: Checkout Chromium
-        run: python3 bootstrap.py --revision 124.0.6315.2
+        run: python3 bootstrap.py --revision 124.0.6315.2 --target-cpu ${{ matrix.targetCpu }}
 
-      - name: Build
+      - name: Build base
         run: |
-          python3 gn_gen.py
+          python3 gn_gen.py --target-cpu ${{ matrix.targetCpu }}
           python3 build.py base

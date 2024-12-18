@@ -128,7 +128,10 @@ def download_nodejs(host_os):
     if host_os == 'mac':
       download_from_google_storage(
           f'chromium-nodejs/{node_version}',
-          sha_file=f'third_party/node/mac/node-darwin-{host_cpu}.tar.gz.sha1')
+          sha_file=f'third_party/node/mac/node-darwin-x64.tar.gz.sha1')
+      download_from_google_storage(
+          f'chromium-nodejs/{node_version}',
+          sha_file=f'third_party/node/mac/node-darwin-arm64.tar.gz.sha1')
     elif host_os == 'win':
       download_from_google_storage(
           f'chromium-nodejs/{node_version}',
