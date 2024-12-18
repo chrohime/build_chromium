@@ -37,12 +37,12 @@ def current_os():
     raise ValueError(f'Unsupported platform: {sys.platform}')
 
 def current_cpu():
-  arch = platform.machine()
-  if arch == 'AMD64' or arch == 'x86_64' or arch == 'x64':
+  arch = platform.machine().lower()
+  if arch == 'amd64' or arch == 'x86_64' or arch == 'x64':
     return 'x64'
-  elif arch == 'ARM64':
+  elif arch == 'arm64':
     return 'arm64'
-  elif arch.startswith('ARM'):
+  elif arch.startswith('arm'):
     return 'arm'
   else:
     raise ValueError(f'Unrecognized CPU architecture: {arch}')
