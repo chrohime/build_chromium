@@ -116,6 +116,7 @@ def download_gcs_dep(name, bucket):
   output_file = os.path.join(name, objects[0]['output_file'])
   download_from_google_storage(bucket,
                                sha1=objects[0]['object_name'],
+                               extract=output_file.endswith('.tar.gz'),
                                output=output_file)
 
 def download_nodejs(host_os):
