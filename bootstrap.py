@@ -96,13 +96,13 @@ def search_pattern(filename, pattern):
       raise ValueError(f'Failed to match pattern: {pattern}')
 
 def download_from_google_storage(
-    bucket, sha_file=None, sha1=None, extract=True, output=None):
+    bucket, sha_file=None, checksum=None, extract=True, output=None):
   args = [ sys.executable,
            'third_party/depot_tools/download_from_google_storage.py',
            '--no_resume', '--no_auth',
            '--bucket', bucket ]
-  if sha1:
-    args += [ sha1 ]
+  if checksum:
+    args += [ checksum ]
   if sha_file:
     args += [ '-s', sha_file ]
   if extract:
@@ -113,9 +113,15 @@ def download_from_google_storage(
 
 def download_gcs_dep(name, bucket):
   objects = ast.literal_eval(read_var_from_deps('src/' + name))
+  object_name = objects[0]['object_name'].split('/')
+  if len(object_name) > 1:
+    bucket += '/' + object_name[0]
+    object_name = object_name[1]
+  else:
+    object_name = object_name[0]
   output_file = os.path.join(name, objects[0]['output_file'])
   download_from_google_storage(bucket,
-                               sha1=objects[0]['object_name'],
+                               checksum=object_name,
                                extract=output_file.endswith('.tar.gz'),
                                output=output_file)
 
