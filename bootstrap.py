@@ -87,6 +87,7 @@ def main():
                       help='Target CPU architecture')
   parser.add_argument('--target-os', default=current_os(),
                       help='Target operating system (win, mac, or linux)')
+  parser.add_argument('--verbose', action='store_true')
   args = parser.parse_args()
 
   if not args.revision and not args.tarball_url:
@@ -168,11 +169,11 @@ def main():
 
     @property
     def target_os(self):
-      return (args.target_os, )
+      return tuple(set([args.target_os, host_os]))
 
     @property
     def target_cpu(self):
-      return (args.target_cpu, )
+      return tuple(set([args.target_cpu, host_cpu]))
 
   # Suppress warnings from gclient.
   logger = logging.getLogger()
@@ -182,7 +183,7 @@ def main():
   options = types.SimpleNamespace(nohooks=True,
                                   noprehooks=True,
                                   no_history=True,
-                                  verbose=False,
+                                  verbose=args.verbose,
                                   false=False,
                                   break_repo_locks=False,
                                   patch_refs=[],
