@@ -41,7 +41,7 @@ jobs:
         run: python3 -m pip install httplib2
 
       - name: Checkout Chromium
-        run: python3 bootstrap.py --revision 124.0.6315.2 --target-cpu ${{ matrix.targetCpu }}
+        run: python3 bootstrap.py --revision 133.0.6905.0 --target-cpu ${{ matrix.targetCpu }}
 
       - name: Build base
         run: |

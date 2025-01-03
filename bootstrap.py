@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 
 import argparse
-import ast
+import logging
 import os
 import platform
 import re
 import subprocess
 import sys
 import tarfile
+import types
 import urllib.request
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -17,8 +18,8 @@ def add_depot_tools_to_path(src_dir):
   os.environ['DEPOT_TOOLS_UPDATE'] = '0'
   os.environ['CHROMIUM_BUILDTOOLS_PATH'] = os.path.join(os.path.abspath(src_dir), 'buildtools')
   os.environ['PATH'] = os.pathsep.join([
-    os.path.join(src_dir, 'third_party', 'ninja'),
-    os.path.join(ROOT_DIR, 'vendor', 'depot_tools'),
+    os.path.join(src_dir, 'third_party/ninja'),
+    os.path.join(src_dir, 'third_party/depot_tools'),
     os.environ['PATH'],
   ])
   # Download Windows toolchain, which is required for using reclient.
@@ -60,41 +61,6 @@ def download_and_extract(url, extract_path):
   with tarfile.open(fileobj=stream, mode='r|xz', errorlevel=0) as tar:
     tar.extractall(path=extract_path, members=track_progress(tar))
 
-def cipd(root, package, version):
-  cipd_bin = 'cipd.bat' if current_os() == 'win' else 'cipd'
-  args = [ cipd_bin, 'ensure', '-root', root, '-ensure-file', '-' ]
-  process = subprocess.Popen(args,
-                             text=True,
-                             stdin=subprocess.PIPE,
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE)
-  stdout, stderr = process.communicate(input=f'{package} {version}')
-  if process.returncode != 0:
-    print(stdout)
-    print(stderr)
-    raise ValueError('cipd failed.')
-
-def read_var_from_deps(var, deps_file='DEPS'):
-  result = subprocess.run([ sys.executable,
-                            'third_party/depot_tools/gclient.py', 'getdep',
-                            '--deps-file', deps_file,
-                            '-r', var ],
-                          capture_output=True, text=True)
-  if result.returncode != 0:
-    print(result.stdout)
-    print(result.stderr)
-    raise ValueError('gclient getdep failed.')
-  return result.stdout
-
-def search_pattern(filename, pattern):
-  with open(filename, 'r') as f:
-    content = f.read()
-    match = re.search(pattern, content)
-    if match:
-      return match.group(1)
-    else:
-      raise ValueError(f'Failed to match pattern: {pattern}')
-
 def download_from_google_storage(
     bucket, sha_file=None, checksum=None, extract=True, output=None):
   args = [ sys.executable,
@@ -110,47 +76,6 @@ def download_from_google_storage(
   if output:
     args += [ '-o', output ]
   subprocess.check_call(args)
-
-def download_gcs_dep(name, bucket):
-  objects = ast.literal_eval(read_var_from_deps('src/' + name))
-  object_name = objects[0]['object_name'].split('/')
-  if len(object_name) > 1:
-    bucket += '/' + object_name[0]
-    object_name = object_name[1]
-  else:
-    object_name = object_name[0]
-  output_file = os.path.join(name, objects[0]['output_file'])
-  download_from_google_storage(bucket,
-                               checksum=object_name,
-                               extract=output_file.endswith('.tar.gz'),
-                               output=output_file)
-
-def download_nodejs(host_os):
-  if os.path.exists('third_party/node/linux/node-linux-x64.tar.gz.sha1'):
-    # Linux node is always downloaded for remote action.
-    node_version = search_pattern('DEPS', 'chromium-nodejs/([0-9.]*)')
-    download_from_google_storage(
-        f'chromium-nodejs/{node_version}',
-        sha_file='third_party/node/linux/node-linux-x64.tar.gz.sha1')
-    if host_os == 'mac':
-      download_from_google_storage(
-          f'chromium-nodejs/{node_version}',
-          sha_file=f'third_party/node/mac/node-darwin-x64.tar.gz.sha1')
-      download_from_google_storage(
-          f'chromium-nodejs/{node_version}',
-          sha_file=f'third_party/node/mac/node-darwin-arm64.tar.gz.sha1')
-    elif host_os == 'win':
-      download_from_google_storage(
-          f'chromium-nodejs/{node_version}',
-          extract=False,
-          sha_file='third_party/node/win/node.exe.sha1')
-  else:
-    download_gcs_dep('third_party/node/linux', 'chromium-nodejs')
-    if host_os == 'mac':
-      download_gcs_dep('third_party/node/mac', 'chromium-nodejs')
-      download_gcs_dep('third_party/node/mac_arm64', 'chromium-nodejs')
-    elif host_os == 'win':
-      download_gcs_dep('third_party/node/win', 'chromium-nodejs')
 
 def main():
   parser = argparse.ArgumentParser()
@@ -190,45 +115,107 @@ def main():
   host_cpu = current_cpu()
 
   # Bootstrap depot_tools.
+  depot_tools_path = os.path.join(args.src_dir, 'third_party/depot_tools')
+  add_depot_tools_to_path(args.src_dir)
   if host_os == 'win':
-    win_tools = os.path.join(ROOT_DIR, 'vendor/depot_tools/bootstrap/win_tools.bat')
+    win_tools = os.path.join(depot_tools_path, 'bootstrap/win_tools.bat')
     subprocess.check_call([ win_tools ])
 
-  add_depot_tools_to_path(args.src_dir)
-  os.chdir(args.src_dir)
+  # Import gclient.
+  sys.path.append(depot_tools_path)
+  import gclient
+  import gclient_scm
+  import gclient_utils
 
-  # Must execute before downloading clang.
+  # Custom gclient to skip git deps.
+  class MyGClient(gclient.Dependency):
+    def __init__(self, options):
+      super(MyGClient, self).__init__(parent=None,
+                                      name='src',
+                                      url=None,
+                                      managed=True,
+                                      custom_deps=None,
+                                      custom_vars=None,
+                                      custom_hooks=None,
+                                      deps_file='DEPS',
+                                      should_process=True,
+                                      should_recurse=True,
+                                      relative=None,
+                                      condition=None,
+                                      print_outbuf=True)
+      self._cipd_root = None
+      self._gcs_root = None
+      self._options = options
+
+    def CreateSCM(self):
+      return gclient_scm.CogWrapper()
+
+    def GetCipdRoot(self):
+      if not self._cipd_root:
+        self._cipd_root = gclient_scm.CipdRoot(
+            args.src_dir,
+            'https://chrome-infra-packages.appspot.com')
+      return self._cipd_root
+
+    def GetGcsRoot(self):
+      if not self._gcs_root:
+          self._gcs_root = gclient_scm.GcsRoot(args.src_dir)
+      return self._gcs_root
+
+    @property
+    def root_dir(self):
+      return os.path.dirname(args.src_dir)
+
+    @property
+    def target_os(self):
+      return (args.target_os, )
+
+    @property
+    def target_cpu(self):
+      return (args.target_cpu, )
+
+  # Suppress warnings from gclient.
+  logger = logging.getLogger()
+  logger.setLevel(logging.ERROR)
+
+  # Options for gclient, to ignore git deps, which are included in tarball.
+  options = types.SimpleNamespace(nohooks=True,
+                                  noprehooks=True,
+                                  no_history=True,
+                                  verbose=False,
+                                  false=False,
+                                  break_repo_locks=False,
+                                  patch_refs=[],
+                                  ignore_dep_type=['git'])
+
+  # Sync deps, i.e. gclient sync.
+  gclient = MyGClient(options)
+  gclient.ParseDepsFile()
+  work_queue = gclient_utils.ExecutionQueue(12, None, ignore_requirements=True)
+  for dep in gclient.dependencies:
+    work_queue.enqueue(dep)
+  work_queue.flush(revision_overrides={},
+                   command='update',
+                   args=[],
+                   options=options,
+                   patch_refs={},
+                   target_branches={},
+                   skip_sync_revisions={})
+  if gclient._cipd_root:
+    gclient._cipd_root.run('update')
+
+  # Run hooks.
+  os.chdir(args.src_dir)
   if host_os == 'win':
     subprocess.check_call([ sys.executable,
                             'build/vs_toolchain.py', 'update', '--force' ])
-
-  # Download compilers.
-  subprocess.check_call([ sys.executable, 'tools/clang/scripts/update.py' ])
-  subprocess.check_call([ sys.executable, 'tools/rust/update_rust.py' ])
-
-  # Download util binaries.
-  download_nodejs(host_os)
-  if os.path.isdir('third_party/devtools-frontend/src/third_party/esbuild'):
-    cipd('third_party/devtools-frontend/src/third_party/esbuild',
-         'infra/3pp/tools/esbuild/${platform}',
-         read_var_from_deps('third_party/esbuild:infra/3pp/tools/esbuild/${platform}',
-                            'third_party/devtools-frontend/src/DEPS'))
-  cipd('third_party/ninja',
-       'infra/3pp/tools/ninja/${platform}',
-       read_var_from_deps('src/third_party/ninja:infra/3pp/tools/ninja/${platform}'))
-  cipd('buildtools/reclient',
-       'infra/rbe/client/${platform}',
-       read_var_from_deps('src/buildtools/reclient:infra/rbe/client/${platform}'))
-  gn_version = read_var_from_deps('src/buildtools/mac:gn/gn/mac-${arch}')
   if host_os == 'linux':
-    cipd('buildtools/linux64', 'gn/gn/linux-${arch}', gn_version)
     if args.target_os == 'win':
       download_from_google_storage(
           'chromium-browser-clang/rc',
           extract=False,
           sha_file='build/toolchain/win/rc/linux64/rc.sha1')
   elif host_os == 'mac':
-    cipd('buildtools/mac', 'gn/gn/mac-${arch}', gn_version)
     download_from_google_storage(
         'chromium-browser-clang',
         sha_file=f'tools/clang/dsymutil/bin/dsymutil.{host_cpu}.sha1',
@@ -240,21 +227,10 @@ def main():
           extract=False,
           sha_file='build/toolchain/win/rc/mac/rc.sha1')
   elif host_os == 'win':
-    cipd('buildtools/win', 'gn/gn/windows-amd64', gn_version)
     download_from_google_storage(
         'chromium-browser-clang/rc',
         extract=False,
         sha_file='build/toolchain/win/rc/win/rc.exe.sha1')
-
-  # Download Linux dependencies.
-  if host_os == 'linux':
-    subprocess.check_call([ sys.executable,
-                            'build/linux/sysroot_scripts/install-sysroot.py',
-                            '--arch', host_cpu ])
-    if host_cpu != args.target_cpu:
-      subprocess.check_call([ sys.executable,
-                              'build/linux/sysroot_scripts/install-sysroot.py',
-                              '--arch', args.target_cpu ])
 
 if __name__ == '__main__':
   exit(main())
