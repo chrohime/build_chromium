@@ -1,4 +1,0 @@
-[submodule "depot_tools"]
-	path = vendor/depot_tools
-	url = https://chromium.googlesource.com/chromium/tools/depot_tools
-	shallow = true
