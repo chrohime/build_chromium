@@ -61,22 +61,6 @@ def download_and_extract(url, extract_path):
   with tarfile.open(fileobj=stream, mode='r|xz', errorlevel=0) as tar:
     tar.extractall(path=extract_path, members=track_progress(tar))
 
-def download_from_google_storage(
-    bucket, sha_file=None, checksum=None, extract=True, output=None):
-  args = [ sys.executable,
-           'third_party/depot_tools/download_from_google_storage.py',
-           '--no_resume', '--no_auth',
-           '--bucket', bucket ]
-  if checksum:
-    args += [ checksum ]
-  if sha_file:
-    args += [ '-s', sha_file ]
-  if extract:
-    args += [ '--extract' ]
-  if output:
-    args += [ '-o', output ]
-  subprocess.check_call(args)
-
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument('--revision', help='The revision to checkout')
@@ -206,32 +190,12 @@ def main():
     gclient._cipd_root.run('update')
 
   # Run hooks.
-  os.chdir(args.src_dir)
-  if host_os == 'win':
-    subprocess.check_call([ sys.executable,
-                            'build/vs_toolchain.py', 'update', '--force' ])
-  if host_os == 'linux':
-    if args.target_os == 'win':
-      download_from_google_storage(
-          'chromium-browser-clang/rc',
-          extract=False,
-          sha_file='build/toolchain/win/rc/linux64/rc.sha1')
-  elif host_os == 'mac':
-    download_from_google_storage(
-        'chromium-browser-clang',
-        sha_file=f'tools/clang/dsymutil/bin/dsymutil.{host_cpu}.sha1',
-        extract=False,
-        output='tools/clang/dsymutil/bin/dsymutil')
-    if args.target_os == 'win':
-      download_from_google_storage(
-          'chromium-browser-clang/rc',
-          extract=False,
-          sha_file='build/toolchain/win/rc/mac/rc.sha1')
-  elif host_os == 'win':
-    download_from_google_storage(
-        'chromium-browser-clang/rc',
-        extract=False,
-        sha_file='build/toolchain/win/rc/win/rc.exe.sha1')
+  for hook in gclient.GetHooks(options):
+    if hook.name not in ['lastchange',
+                         'gpu_lists_version',
+                         'lastchange_skia',
+                         'lastchange_dawn']:
+      hook.run()
 
 if __name__ == '__main__':
   exit(main())
