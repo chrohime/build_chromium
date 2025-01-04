@@ -30,7 +30,8 @@ def add_depot_tools_to_path(src_dir):
 
 def current_os():
   if sys.platform.startswith('linux'):
-    return 'linux'
+    # Required by gclient in old versions.
+    return 'unix'
   elif sys.platform.startswith('win'):
     return 'win'
   elif sys.platform == 'darwin':
