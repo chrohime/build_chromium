@@ -59,7 +59,9 @@ def download_and_extract(url, extract_path):
   # Set errorlevel=0 because the tarball may include linux symbolic links that
   # do not exist on current platform.
   with tarfile.open(fileobj=stream, mode='r|xz', errorlevel=0) as tar:
-    tar.extractall(path=extract_path, members=track_progress(tar))
+    tar.extractall(path=extract_path,
+                   members=track_progress(tar),
+                   filter='data')
 
 def main():
   parser = argparse.ArgumentParser()
@@ -111,6 +113,7 @@ def main():
   import gclient
   import gclient_scm
   import gclient_utils
+  from third_party.repo.progress import Progress
 
   # Custom gclient to skip git deps.
   class MyGClient(gclient.Dependency):
@@ -176,7 +179,10 @@ def main():
   # Sync deps, i.e. gclient sync.
   gclient = MyGClient(options)
   gclient.ParseDepsFile()
-  work_queue = gclient_utils.ExecutionQueue(12, None, ignore_requirements=True)
+  work_queue = gclient_utils.ExecutionQueue(
+      12,
+      Progress('Syncing deps', 1),
+      ignore_requirements=True)
   for dep in gclient.dependencies:
     work_queue.enqueue(dep)
   work_queue.flush(revision_overrides={},

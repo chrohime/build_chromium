@@ -4,7 +4,7 @@ on: push
 
 jobs:
   build:
-    runs-on: ${{ fromJson('{"linux":"ubuntu-22.04","mac":"macos-13","win":"windows-2022"}')[matrix.targetOs] }}
+    runs-on: ${{ fromJson('{"linux":"ubuntu-22.04","mac":"macos-15","win":"windows-2022"}')[matrix.targetOs] }}
     continue-on-error: false
 
     strategy:
@@ -23,19 +23,10 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v3
-        with:
-          submodules: recursive
-
-      - name: Install Linux Dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt update
-          sudo apt install gperf
-          /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
 
       - uses: actions/setup-python@v3
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Install python dependencies
         run: python3 -m pip install httplib2
